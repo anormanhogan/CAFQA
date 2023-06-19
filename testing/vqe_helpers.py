@@ -2,9 +2,10 @@ from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister, Aer, exec
 from qiskit.transpiler.passes import RemoveBarriers
 from qiskit.providers.aer import AerSimulator
 
-from qiskit.circuit.library import EfficientSU2
+from qiskit.circuit.library import ExcitationPreserving
 
 from qiskit.quantum_info import Pauli, Operator
+from qiskit.circuit import Parameter
 
 
 import numpy as np
@@ -58,21 +59,58 @@ def hartreefock(circuit, HF_bitstring=None, **kwargs):
         if HF_bitstring[i] == "1":
             circuit.x(i)
 
-def efficientsu2_full(n_qubits, repetitions):
+def ansatz(n_qubits, repetitions):
     """
-    EfficientSU2 ansatz with full entanglement.
+    XY ansatz with full entanglement.
     n_qubits (Int): Number of qubits in circuit.
     repetitions (Int): # ansatz repetitions.
 
     Returns: 
     (QuantumCircuit, Int) (ansatz, #parameters).
     """
-    ansatz = EfficientSU2(num_qubits=n_qubits, entanglement='full', reps=repetitions, insert_barriers=True)
+    ansatz = QuantumCircuit(n_qubits,n_qubits)
+    params_per_rep = 3*(n_qubits-1)+1
+    tot_param = params_per_rep*repetitions
+
+    ansatz.x(range(n_qubits))
+    for i in range(0,n_qubits,2):
+        ansatz.h(i)
+        ansatz.cx(i,i+1)
+
+    for i in range (repetitions):
+        paramvec = np.array([Parameter("x_"+str(p)) for p in range(tot_param)])
+
+        count = 0
+
+        for qubit in range(n_qubits-1):
+            ansatz.rxx(paramvec[i*params_per_rep + count],qubit,qubit+1)
+            count+=1
+
+        for qubit in range(n_qubits-1):
+            ansatz.ryy(paramvec[i*params_per_rep + count],qubit,qubit+1)
+            count+=1
+        
+        for qubit in range(n_qubits-1):
+            if qubit == 0:
+                ansatz.h(qubit)
+                ansatz.rz(paramvec[i*params_per_rep + count],qubit)
+                ansatz.h(qubit)
+                count+=1
+                ansatz.h(qubit+1)
+                ansatz.rz(paramvec[i*params_per_rep + count],qubit+1)
+                ansatz.h(qubit+1)
+                count+=1
+            else:
+                ansatz.h(qubit+1)
+                ansatz.rz(paramvec[i*params_per_rep + count],qubit+1)
+                ansatz.h(qubit+1)
+                count+=1
+
     num_params_ansatz = len(ansatz.parameters)
-    ansatz = ansatz.decompose()
+    ansatz = ansatz.decompose(gates_to_decompose=['rxx','ryy'])
     return ansatz, num_params_ansatz
 
-def add_ansatz(circuit, ansatz_func, parameters, ansatz_reps=1, **kwargs):
+def add_ansatz(circuit, ansatz_func, parameters, ansatz_reps):
     """
     Append an ansatz (full entanglement) to input circuit, inplace.
     circuit (QuantumCircuit).
@@ -86,7 +124,7 @@ def add_ansatz(circuit, ansatz_func, parameters, ansatz_reps=1, **kwargs):
     ansatz.assign_parameters(parameters=parameters, inplace=True)
     circuit.compose(ansatz, inplace=True)
 
-def vqe_circuit(n_qubits, parameters, hamiltonian, init_func=hartreefock, ansatz_func=efficientsu2_full, ansatz_reps=1, init_last=False, **kwargs):
+def vqe_circuit(n_qubits, parameters, hamiltonian, init_func=hartreefock, ansatz_func=ansatz, ansatz_reps=1, init_last=False, **kwargs):
     """
     Construct a single VQE circuit.
     n_qubits (Int): Number of qubits in circuit.
@@ -261,7 +299,7 @@ def vqe(n_qubits, parameters, coeffs, loss_filename=None, params_filename=None, 
             writer.writerow(parameters)
     return loss
 
-def vqe_cafqa_stim(inputs, n_qubits, coeffs, paulis, init_func=hartreefock, ansatz_func=efficientsu2_full, ansatz_reps=1, init_last=False, loss_filename=None, params_filename=None, **kwargs):
+def vqe_cafqa_stim(inputs, n_qubits, coeffs, paulis, init_func=hartreefock, ansatz_func=ansatz, ansatz_reps=1, init_last=False, loss_filename=None, params_filename=None, **kwargs):
     """
     Compute the CAFQA VQE loss/energy using stim.
     inputs (Dict): CAFQA VQE parameters (values in 0...3) as passed by hypermapper, e.g.: {"x0": 1, "x1": 0, "x2": 0, "x3": 2}
