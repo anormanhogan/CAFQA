@@ -59,6 +59,11 @@ def transform_to_allowed_gates(circuit, **kwargs):
                 qc_loc.sdg(0)
                 qc_loc_instr = qc_loc.to_instruction()
                 dag.substitute_node(node, qc_loc_instr, inplace=True)
+        elif node.name == "rx":
+            qc_loc = QuantumCircuit(1)
+            qc_loc.sx(0)
+            qc_loc_instr = qc_loc.to_instruction()
+            dag.substitute_node(node, qc_loc_instr, inplace=True)
         elif node.name == "x":
             qc_loc = QuantumCircuit(1)
             qc_loc.x(0)
@@ -69,11 +74,18 @@ def transform_to_allowed_gates(circuit, **kwargs):
             qc_loc.h(0)
             qc_loc_instr = qc_loc.to_instruction()
             dag.substitute_node(node, qc_loc_instr, inplace=True)
-        elif node.name == "rx":
+        elif node.name == "u3":
             qc_loc = QuantumCircuit(1)
-            qc_loc.sx(0)
+            qc_loc.x(0)
             qc_loc_instr = qc_loc.to_instruction()
-            dag.substitute_node(node, qc_loc_instr, inplace=True)
+            dag.substitute_node(node, qc_loc_instr, inplace = True)
+        elif node.name == "u2":
+            qc_loc = QuantumCircuit(1)
+            qc_loc.h(0)
+            qc_loc_instr = qc_loc.to_instruction()
+            dag.substitute_node(node, qc_loc_instr, inplace = True)
+
+
     return dag_to_circuit(dag).decompose()
 
 def qiskit_to_stim(circuit):

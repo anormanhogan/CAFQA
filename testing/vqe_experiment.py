@@ -56,8 +56,8 @@ def XYmodel(h):
     # coeffs.append(problem.nuclear_repulsion_energy)
     # coeffs = np.array(coeffs).real
 
-    coeffs = np.array([1,1,-h,-h])
-    paulis = np.array(['XX','YY','XI','IX'])
+    coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1])
+    paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY'])
 
     return coeffs, paulis
 
