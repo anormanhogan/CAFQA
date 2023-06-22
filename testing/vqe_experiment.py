@@ -7,7 +7,6 @@ from qiskit_nature.second_q.drivers import PySCFDriver
 from qiskit_nature.second_q.mappers import ParityMapper, QubitConverter
 
 from skquant.opt import minimize
-import hypermapper
 import json
 import sys
 

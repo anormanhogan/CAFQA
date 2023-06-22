@@ -10,9 +10,11 @@ from qiskit_nature.second_q.mappers import ParityMapper, QubitConverter
 from qiskit_nature.second_q.hamiltonians import FermiHubbardModel
 from qiskit_nature.second_q.hamiltonians.lattices import LineLattice, BoundaryCondition
 from qiskit import QuantumCircuit
-from qiskit.extensions import HamiltonianGate
+from qiskit.quantum_info import Pauli, SparsePauliOp, Statevector
+from qiskit.opflow import PrimitiveOp
 
 from qiskit import QuantumCircuit, ClassicalRegister, QuantumRegister, Aer, execute, IBMQ, transpile
+
 from qiskit.circuit import Parameter
 from qiskit.transpiler.passes import RemoveBarriers
 from qiskit_aer import AerSimulator
@@ -22,25 +24,32 @@ from vqe_experiment import *
 
 from qiskit.algorithms.minimum_eigensolvers import VQE 
 from qiskit_aer.primitives import Estimator
-from qiskit.algorithms import VQE
-from qiskit.algorithms.optimizers import ADAM, SciPyOptimizer, COBYLA
-from qiskit import IBMQ
-from pauli_twirl import *
+from qiskit.algorithms.optimizers import ADAM, SciPyOptimizer, COBYLA, SPSA, SLSQP
+from qiskit.transpiler import PassManager
+
+from mitiq import (
+    Calibrator,
+    Settings,
+    execute_with_mitigation,
+    MeasurementResult,
+)
+
+sys.path.append("/Users/norman/Documents/GitHub/qiskit-research/")
+from qiskit_research.utils.convenience import *
 
 pi = np.pi
-ideal_sim = Aer.get_backend("qasm_simulator")
 
 ### Noise Model ###
 import qiskit_aer.noise as noise
 from qiskit.providers.aer import AerSimulator
 
-#Noise Model: Worst Case Guadalupe
-sx_err_prob = 0.001  # 1-qubit gate
-cx_err_prob = 0.03   # 2-qubit gate
-readout_err = 0.05  # readout error
+#Noise Model: ibmq_jakarta as of 6/21
+sx_err_prob = 0.0002339  # 1-qubit gate
+cx_err_prob = 0.008414  # 2-qubit gate
+readout_err = 0.0383  # readout error
 sx_err = noise.depolarizing_error(sx_err_prob, 1)
 cx_err = noise.depolarizing_error(cx_err_prob, 2)
-thermalsx = noise.thermal_relaxation_error(46.05e3, 23e3, 50)
+thermalsx = noise.thermal_relaxation_error(168.7e3, 36.89e3, 50)
 
 noise_model = noise.NoiseModel()
 noise_model.add_all_qubit_quantum_error(sx_err, ['sx'])
@@ -57,6 +66,7 @@ simulator = AerSimulator(noise_model=noise_model)
 # print(counts)
 
 
+sys.path.append("/Users/norman/Documents/GitHub/BayesianOptimization/")
 
 from bayes_opt import BayesianOptimization
 from bayes_opt.logger import JSONLogger
@@ -70,31 +80,19 @@ e_cafqa = []
 e_vqe = []
 e_cafqa_vqe = []
 
+reps = 2
+num_param = 4*reps
+
+save_dir = "/Users/norman/Documents/GitHub/CAFQA/testing"
+
 for i in h:
 
     #Generate Hamiltonian coefficients and Paulis
     coeffs, paulis = XYmodel(i)
     n_qubits = len(paulis[0])
 
-    save_dir = "/Users/norman/Documents/GitHub/CAFQA/testing"
-    result_file = "result.txt"
-    budget = 500
-    vqe_kwargs = {
-        "ansatz_reps": 2,
-        "init_last": False,
-        "HF_bitstring": '00'
-    }
 
     logger = JSONLogger(path=save_dir+"/BOlog.log")
-
-    # run CAFQA
-    cafqa_guess = [] # will start from all 0 parameters
-    loss_file = "cafqa_loss.txt"
-    params_file = "cafqa_params.txt"
-    loss_filename = save_dir + "/" + loss_file
-    params_filename = save_dir + "/" + params_file
-    num_param = 4*vqe_kwargs['ansatz_reps']
-
 
 
     # p_vec = [1,3,1,0]
@@ -107,43 +105,36 @@ for i in h:
 
 
 
-
     def black_box_function(**params):
-
-        start = timer()
 
         p_vec = []
 
+        ### Force discrete parameters ###
         for p in params.values():
             p_vec.append(int(round(p,0)))
-        # print(p_vec)
+        
         parameters = [p*(pi/2) for p in p_vec]
 
         vqe_qc = QuantumCircuit(n_qubits)
-        add_ansatz(vqe_qc, ansatz, parameters, vqe_kwargs['ansatz_reps'])
+
+        ### Generates the ansatz with parameters filled ###
+        add_ansatz(vqe_qc, ansatz, parameters, reps)
+
+        ### Transforms all gates to Clifford only ###
         vqe_qc_trans = transform_to_allowed_gates(vqe_qc)
         stim_qc = qiskit_to_stim(vqe_qc_trans)
         
         sim = stim.TableauSimulator()
         sim.do_circuit(stim_qc)
         pauli_expect = [sim.peek_observable_expectation(stim.PauliString(p)) for p in paulis]
+
         # print(pauli_expect)
         loss = np.dot(coeffs, pauli_expect)
-        end = timer()
-        # print(f'Loss computed by CAFQA VQE is {loss}, in {end - start} s.')
-        
-        if loss_filename is not None:
-            with open(loss_filename, 'a') as file:
-                writer = csv.writer(file)
-                writer.writerow([loss])
-        
-        if params_filename is not None and parameters is not None:
-            with open(params_filename, 'a') as file:
-                writer = csv.writer(file)
-                writer.writerow(parameters)
+
+        # BO maximizes, so return the negative of the loss (energy)
         return -loss
 
-    # Bounded region of parameter space
+    # Bounded region of parameter space 
     pbounds = {'x_'+str(i): (0,3) for i in range(num_param)}
 
     optimizer = BayesianOptimization(
@@ -160,20 +151,14 @@ for i in h:
         n_iter=10,
     )
 
-    param_vec = [optimizer.max['params']['x_'+str(i)] for i in range(len(optimizer.max['params']))]
-    vqe_qc = QuantumCircuit(n_qubits)
-    qc,p = ansatz(n_qubits,vqe_kwargs['ansatz_reps'])
-    # print(qc.parameters)
+    #Print the converged CAFQA energy
     print("CAFQA ground energy:"+str(-optimizer.max['target']))
     e_cafqa.append(-optimizer.max['target'])
-    qc.assign_parameters(parameters=param_vec, inplace=True)
-    qc.compose(qc, inplace=True)
-    # print(qc)
 
 
 
 
-    # Create an object to store intermediate results
+    # Create an object to store intermediate VQE results
     from dataclasses import dataclass
     @dataclass
     class VQELog:
@@ -189,46 +174,53 @@ for i in h:
     log_cafqa = VQELog([], [])
 
     # Define optimizer
-    # opt = ADAM(maxiter=200)
-    opt = SciPyOptimizer(method='BFGS')
+    # opt = ADAM(maxiter=2000,amsgrad=True)
+    opt = COBYLA(maxiter=1000)
+    # opt = SciPyOptimizer(method='BFGS')
+    # opt = SPSA(maxiter=1000)
+    # opt = SLSQP(maxiter=1000)
+
     # Define hamiltonian
-    Ham = ((X ^ X ^ I ^ I) + (Y ^ Y ^ I ^ I) + (I ^ X ^ X ^ I) + (I ^ Y ^ Y ^ I) + (I ^ I ^ X ^ X) + (I ^ I ^ Y ^ Y) + (X ^ I ^ I ^ X) + (Y ^ I ^ I ^ Y)) + i * ((Z ^ Z ^ I ^ I) + (I ^ Z ^ Z ^ I) + (I ^ I ^ Z ^ Z) + (Z ^ I ^ I ^ Z))   
+    Ham = PrimitiveOp(SparsePauliOp(paulis,coeffs = coeffs))
+    
     # backend = Aer.get_backend('statevector_simulator')
     # backend = sim_vigo
     backend = simulator
 
 
+    ### Save the optimal CAFQA parameterss
     p_vec = []
     for p in optimizer.max['params'].values():
         p_vec.append(int(round(p,0)))
-    # print(p_vec)
+    
     parameters = [p*(pi/2) for p in p_vec]
 
+    # Generate the ansatz
     qc,n = ansatz(4,2)
+
+    num_twirl=10
     # print(qc)
-    # pm = PassManager([PauliTwirling('cx', seed=54321)])
-    # twirlqc=pm.run(qc)
-    # print(twirlqc)
+    twirlqc = add_pauli_twirls(qc,num_twirl)
+    # ddtwirlqc = add_dynamical_decoupling(twirlqc[0],backend,'XY4',add_pulse_cals=True)
 
 
-    #Set up VQE and run on backend
-    vqe = VQE(ansatz=qc, optimizer=opt, quantum_instance=backend, initial_point=None, callback=log.update)
-    result = vqe.compute_minimum_eigenvalue(operator=Ham)
-    vqe_cafqa = VQE(ansatz=qc, optimizer=opt, quantum_instance=backend, initial_point=parameters, callback=log_cafqa.update)
+    estimator = Estimator(backend_options={"noise_model":noise_model})
+
+    # Set up VQE and run on backend
+    vqe_only = VQE(estimator=estimator,ansatz=qc, optimizer=opt, callback=log.update)
+    result = vqe_only.compute_minimum_eigenvalue(operator=Ham)
+    vqe_cafqa = VQE(estimator=estimator,ansatz=qc, optimizer=opt, initial_point=parameters, callback=log_cafqa.update)
     result_w_cafqa = vqe_cafqa.compute_minimum_eigenvalue(operator=Ham)
 
-    # print(result_w_cafqa)
     plt.plot(log.values, label="VQE")
     plt.plot(log_cafqa.values, label="CAFQA + VQE")
     plt.plot([get_ref_energy(coeffs, paulis) for i in range(len(log.values))],"-k",label="Actual")
 
-    # print the result
+    # print the results
     print("VQE energy: "+str(result.eigenvalue.real))
     e_vqe.append(result.eigenvalue.real)
     print("CAFQA + VQE energy: "+str(result_w_cafqa.eigenvalue.real))
     e_cafqa_vqe.append(result_w_cafqa.eigenvalue.real)
-
-
 
 
     print("Actual energy:"+str(get_ref_energy(coeffs, paulis)))
@@ -244,6 +236,8 @@ plt.legend()
 plt.title("4-site XXZ Model: XX + YY + Hz*ZZ (Hz = "+str(h[0])+")")
 plt.savefig("mygraph.png")
 
-# %%
-round(0.50001,0)
+# # %%
+# round(0.50001,0)
+# # %%
+
 # %%
