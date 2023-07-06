@@ -69,48 +69,62 @@ def ansatz(n_qubits, repetitions):
     Returns: 
     (QuantumCircuit, Int) (ansatz, #parameters).
     """
-
-    tot_param = 4*repetitions
-    ansatz = QuantumCircuit(QuantumRegister(n_qubits))
+    ansatz = QuantumCircuit(n_qubits,n_qubits)
+    params_per_rep = 4*(n_qubits)
+    tot_param = params_per_rep*repetitions
 
     ansatz.x(range(n_qubits))
 
     for i in range(0,n_qubits,2):
-        ansatz.h(i)
-        ansatz.cx(i,i+1)
-    
-    paramvec = np.array([Parameter("x_"+str(p)) for p in range(tot_param)])
-    count = 0
-    
-    for i in range(repetitions):
-        ansatz.rzz(paramvec[count],0,3)
-        ansatz.rzz(paramvec[count],1,2)
+        if i == (n_qubits-1):
+            ansatz.h(i)
+            ansatz.cx(i,0)
+        else:
+            ansatz.h(i)
+            ansatz.cx(i,i+1)
+            
 
-        count+=1
+    for i in range (repetitions):
+        paramvec = np.array([Parameter("x_"+str(p)) for p in range(tot_param)])
 
-        ansatz.rxx(paramvec[count],0,3)
-        ansatz.rxx(paramvec[count],1,2)
-        ansatz.ryy(paramvec[count],0,3)
-        ansatz.ryy(paramvec[count],1,2)
+        count = 0
 
-        count+=1
+        for qubit in range(n_qubits):
+            if qubit == n_qubits-1:
+                ansatz.rxx(paramvec[i*params_per_rep + count],qubit,0)
+                count+=1
+            else:
+                ansatz.rxx(paramvec[i*params_per_rep + count],qubit,qubit+1)
+                count+=1
 
-        ansatz.rzz(paramvec[count],0,1)
-        ansatz.rzz(paramvec[count],2,3)
-
-        count+=1
-
-        ansatz.rxx(paramvec[count],0,1)
-        ansatz.rxx(paramvec[count],2,3)
-        ansatz.ryy(paramvec[count],0,1)
-        ansatz.ryy(paramvec[count],2,3)
-
-        count+=1
+        for qubit in range(n_qubits):
+            if qubit == n_qubits-1:
+                ansatz.ryy(paramvec[i*params_per_rep + count],qubit,0)
+                count+=1
+            else:
+                ansatz.ryy(paramvec[i*params_per_rep + count],qubit,qubit+1)
+                count+=1
         
-    # ansatz = EfficientSU2(num_qubits=n_qubits, entanglement='full', reps=repetitions, insert_barriers=True)
+        for qubit in range(n_qubits):
+            ansatz.h(qubit)
+            ansatz.rz(paramvec[i*params_per_rep + count],qubit)
+            ansatz.h(qubit)
+            count+=1
+
+        for qubit in range(n_qubits):
+            ansatz.rz(paramvec[i*params_per_rep + count],qubit)
+            count+=1
+
     num_params_ansatz = len(ansatz.parameters)
-    ansatz = ansatz.decompose()
+    ansatz = ansatz.decompose(gates_to_decompose=['rxx','ryy'])
     return ansatz, num_params_ansatz
+
+# def ansatz(n_qubits, repetitions):
+    # ansatz = ExcitationPreserving(num_qubits=n_qubits, entanglement='full', reps=repetitions, insert_barriers=True)
+    # num_params_ansatz = len(ansatz.parameters)
+    # ansatz = ansatz.decompose()
+    # ansatz = ansatz.decompose(gates_to_decompose=['rxx','ryy'])
+    # return ansatz, num_params_ansatz
 
 def add_ansatz(circuit, ansatz_func, parameters, ansatz_reps, **kwargs):
     """

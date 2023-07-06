@@ -14,7 +14,7 @@ from vqe_helpers import *
 from circuit_manipulation import *
 
 
-def XYmodel(h):
+def XYmodel(h,bx):
     """
     Compute Hamiltonian for molecule in qubit encoding using Qiskit Nature.
     atom_string (String): string to describe molecule, passed to PySCFDriver.
@@ -55,8 +55,8 @@ def XYmodel(h):
     # coeffs.append(problem.nuclear_repulsion_energy)
     # coeffs = np.array(coeffs).real
 
-    coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1])
-    paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY'])
+    coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1,bx,bx,bx,bx])
+    paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY','XIII','IXII','IIXI','IIIX'])
 
     return coeffs, paulis
 
