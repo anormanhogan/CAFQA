@@ -69,12 +69,13 @@ from bayes_opt import BayesianOptimization
 from bayes_opt.logger import JSONLogger
 from bayes_opt.event import Events
 
-num_qubits = 5
-training_points = [0.5,1.7,3] #bz
+num_qubits = 4
+training_points = [0.2,1.2,2.2] #bz
 num_tp = len(training_points)
 bx = 0
 bz = 1 #for final comparisons
 j = -1
+periodic = False
 
 #Bz tuning 
 Bz_spec = np.linspace(0,3,10)
@@ -101,7 +102,7 @@ def remove_duplicates(arr):
     
     return np.array(result)
 
-def generate_permutations(n_qubits,pauli):
+def generate_permutations(n_qubits,pauli,periodic):
     permutations_list = []
     base_string =  pauli + "I" * (n_qubits - 2)
     
@@ -114,17 +115,18 @@ def generate_permutations(n_qubits,pauli):
         if (pauli in perm) and (perm not in permutations_list):
             permutations_list.append(perm)
 
-    permutations_list.append(pauli[1]+"I" * (n_qubits - 2) + pauli[0])
+    if periodic:
+        permutations_list.append(pauli[1]+"I" * (n_qubits - 2) + pauli[0])
     
     return permutations_list
 
-def XYmodel(n_qubits,j,bx,bz):
+def XYmodel(n_qubits,j,bx,bz,periodic):
     
-    xxyy_coeff = np.array([j for i in range(2*n_qubits)])
+    xxyy_coeff = np.array([j for i in range(2*(n_qubits-1))])
     bx_coeff = np.array([bx for i in range(n_qubits)])
     bz_coeff = np.array([bz for i in range(n_qubits)])
 
-    xxyy_paulis = generate_permutations(n_qubits,'XX') + generate_permutations(n_qubits,'YY')
+    xxyy_paulis = generate_permutations(n_qubits,'XX',periodic) + generate_permutations(n_qubits,'YY',periodic)
     xperms = [''.join(perm) for perm in permutations('I'*(n_qubits-1)+'X')]
     zperms = [''.join(perm) for perm in permutations('I'*(n_qubits-1)+'Z')]
     bx_paulis = []
@@ -158,7 +160,7 @@ def make_basis(training_points,bx):
         print('##############################################')
         
         ####### Generate Hamiltonian coefficients and Paulis
-        coeffs, paulis = XYmodel(num_qubits,j,bx,i)
+        coeffs, paulis = XYmodel(num_qubits,j,bx,i,periodic)
 
         ####### Get num of parameters:
         qc, num_param = ansatz(num_qubits,reps)
@@ -239,7 +241,7 @@ def make_basis(training_points,bx):
 
 def cafqa_energy_spec(Bz_spec,bx):
     cafqa_energy = []
-    cafqa_GS = []
+    cafqa_GS = np.zeros((len(Bz_spec),2**num_qubits),dtype=complex)
     cafqa_parameters = []
     for i,Bz in enumerate(Bz_spec):
 
@@ -248,7 +250,7 @@ def cafqa_energy_spec(Bz_spec,bx):
         print('##############################################')
         
         ####### Generate Hamiltonian coefficients and Paulis
-        coeffs, paulis = XYmodel(num_qubits,j,bx,Bz)
+        coeffs, paulis = XYmodel(num_qubits,j,bx,Bz,periodic)
 
         ####### Get num of parameters:
         qc, num_param = ansatz(num_qubits,reps)
@@ -316,7 +318,7 @@ def cafqa_energy_spec(Bz_spec,bx):
         qc = QuantumCircuit(num_qubits,num_qubits)
         add_ansatz(qc,ansatz,cafqa_parameters[i],reps)
         vec = Statevector(qc)
-        cafqa_GS.append(vec)
+        cafqa_GS[i]=vec
 
     return cafqa_energy, cafqa_GS
 
@@ -367,7 +369,7 @@ def get_new_evals(Ham,basis):
 def plot_energy_spec(Bz_spec,n_qubits,j,bx):
     energies = np.zeros((len(Bz_spec),2**n_qubits))
     for i,Bz in enumerate(Bz_spec):
-        coeffs,paulis = XYmodel(n_qubits,j,bx,Bz)
+        coeffs,paulis = XYmodel(n_qubits,j,bx,Bz,periodic)
         Ham = SparsePauliOp(paulis,coeffs = coeffs).to_matrix()
 
         energies[i],evecs = scipy.linalg.eigh(Ham)
@@ -376,27 +378,37 @@ def plot_energy_spec(Bz_spec,n_qubits,j,bx):
     increment = 1/(2**n_qubits)
     alph = increment
     for i in range(2**n_qubits):
+        fig = plt
         if i == 2**n_qubits-1:
-            plt.plot(Bz_spec,energies[:,i],'b',alpha=alph, label="Ground state")for point in training_points:
-            plt.plot([point,point],[max(energies[:,i]),min(energies[:,i])],'-r',label="Training points")
+            fig.plot(Bz_spec,energies[:,i],'b',alpha=alph, label="Ground state")
+            flag = 0
+            for point in training_points:
+                if flag == 0:
+                    fig.plot([point,point],[max(energies.flatten()),min(energies.flatten())],'-r',label="Training points")
+                    flag = 1
+                else:
+                    fig.plot([point,point],[max(energies.flatten()),min(energies.flatten())],'-r',label='_nolegend_')
         else:
-            plt.plot(Bz_spec,energies[:,i],'k',alpha=alph)
+            fig.plot(Bz_spec,energies[:,i],'k',alpha=alph,label='_nolegend_')
 
         alph+=increment
-        plt.xlabel("Bz")
-        plt.ylabel("Energy")
-        plt.title(str(n_qubits)+" site periodic XY model: Bx="+str(bx))
-        plt.legend()
-    return plt
+        fig.xlabel("Bz")
+        fig.ylabel("Energy")
+        if periodic:
+            fig.title(str(n_qubits)+" site periodic XY model: Bx="+str(bx))
+        else:
+            fig.title(str(n_qubits)+" site XY model: Bx="+str(bx))
+        fig.legend()
+    return fig
 
 def GS_comparisons(Bz_spec,basis,bx,return_GS):
     
     cafqa_energies, cafqa_GS = cafqa_energy_spec(Bz_spec,bx)
 
     EC_energies = np.zeros(len(Bz_spec))
-    EC_GS = np.zeros((len(Bz_spec),2**num_qubits))
+    EC_GS = np.zeros((len(Bz_spec),2**num_qubits),dtype=complex)
     exact_energies = np.zeros(len(Bz_spec))
-    exact_GS = np.zeros((len(Bz_spec),2**num_qubits))
+    exact_GS = np.zeros((len(Bz_spec),2**num_qubits),dtype=complex)
 
     for i,Bz in enumerate(Bz_spec):
 
@@ -404,7 +416,7 @@ def GS_comparisons(Bz_spec,basis,bx,return_GS):
         print('Beginning EC procedure for Bz = '+str(Bz_spec[i])+' ('+str(i+1)+'/'+str(len(Bz_spec))+') ...')
         print('##############################################')
 
-        coeffs,paulis = XYmodel(num_qubits,j,bx,Bz)
+        coeffs,paulis = XYmodel(num_qubits,j,bx,Bz,periodic)
         Ham = SparsePauliOp(paulis,coeffs = coeffs).to_matrix()
 
         evals,EC_GS[i] = get_new_evals(Ham,basis)
@@ -435,7 +447,10 @@ def plot_comparisons(Bz_spec,basis,bx):
     plt.plot(Bz_spec,data["EC energy"],'--o',label="EC with "+str(len(basis))+" unique training pts")
     plt.xlabel("Bz")
     plt.ylabel("Energy")
-    plt.title(str(num_qubits)+" site periodic XY model: Bx="+str(bx))
+    if periodic:
+        plt.title(str(num_qubits)+" site periodic XY model: Bx="+str(bx))
+    else:
+        plt.title(str(num_qubits)+" site XY model: Bx="+str(bx))
     plt.legend()
 
     plt.savefig("XY_energy_comparisons.png")
@@ -446,7 +461,10 @@ def plot_comparisons(Bz_spec,basis,bx):
     plt.plot(Bz_spec,data["EC fidelity"],'--o',label="EC with "+str(len(basis))+" unique training pts")
     plt.xlabel("Bz")
     plt.ylabel("Fidelity")
-    plt.title("GS fidelity for "+str(num_qubits)+" site periodic XY model: Bx="+str(bx))
+    if periodic:
+        plt.title("GS fidelity for "+str(num_qubits)+" site periodic XY model: Bx="+str(bx))
+    else:
+        plt.title("GS fidelity for "+str(num_qubits)+" site XY model: Bx="+str(bx))
     plt.legend()
 
     plt.savefig("XY_fidelity_comparisons.png")
@@ -454,6 +472,22 @@ def plot_comparisons(Bz_spec,basis,bx):
 
     return plt, data
 
+def pretty_print(basis):
+
+    for vec in basis:
+        nbits = int(np.log2(len(vec)))
+        
+        formatstr = "{0:>0" + str(nbits) + "b}"
+        
+        ix=-1
+        for x in vec:
+            ix += 1
+            if abs(x) < 1e-8:
+                continue
+            
+            print(formatstr.format(ix),": ",x)
+        print('----------------------------')
+    
 
 
 # qc = QuantumCircuit(num_qubits,num_qubits)
@@ -470,7 +504,8 @@ def plot_comparisons(Bz_spec,basis,bx):
 # trans_qc.draw()
 
 print("*********\nPlotting Energies from Exact Diagonization\n*********\n\n")
-plot_energy_spec(Bz_spec,num_qubits,j,bx).show()
+fig = plot_energy_spec(Bz_spec,num_qubits,j,bx)
+fig.show()
 
 print("*********\nCreating Basis for EC\n*********\n\n")
 basis, cafqa_params = make_basis(training_points,bx)

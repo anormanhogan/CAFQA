@@ -70,50 +70,97 @@ def ansatz(n_qubits, repetitions):
     (QuantumCircuit, Int) (ansatz, #parameters).
     """
     ansatz = QuantumCircuit(n_qubits,n_qubits)
-    params_per_rep = 4*(n_qubits)
-    tot_param = params_per_rep*repetitions
+    if n_qubits == 2:
+        params_per_rep = 6*(n_qubits-1)
+    elif n_qubits == 3:
+        params_per_rep = 6*(n_qubits)
+    elif (n_qubits == 4) or (n_qubits == 5):
+        params_per_rep = 6*(n_qubits+1)
+    elif (n_qubits == 6) or (n_qubits == 7):
+        params_per_rep = 6*(n_qubits+2)
+    elif (n_qubits == 8) or (n_qubits == 9):
+        params_per_rep = 6*(n_qubits+4)
+    elif (n_qubits == 10) or (n_qubits == 11):
+        params_per_rep = 6*(n_qubits+5)
 
-    ansatz.x(range(n_qubits))
+    tot_param = params_per_rep + 6*(n_qubits-1)
+    paramvec = np.array([Parameter("x_"+str(p)) for p in range(tot_param)])
 
-    for i in range(0,n_qubits,2):
-        if i == (n_qubits-1):
-            ansatz.h(i)
-            ansatz.cx(i,0)
-        else:
-            ansatz.h(i)
-            ansatz.cx(i,i+1)
+    ansatz.x(range(n_qubits-int(n_qubits/2)))
+    ansatz.barrier(range(n_qubits))
+    # for i in range(0,n_qubits,2):
+    #     if i == (n_qubits-1):
+    #         ansatz.h(i)
+    #         ansatz.cx(i,0)
+    #     else:
+    #         ansatz.h(i)
+    #         ansatz.cx(i,i+1)
             
-
-    for i in range (repetitions):
-        paramvec = np.array([Parameter("x_"+str(p)) for p in range(tot_param)])
+    def add_block(circ,q1,q2,params):
 
         count = 0
 
-        for qubit in range(n_qubits):
-            if qubit == n_qubits-1:
-                ansatz.rxx(paramvec[i*params_per_rep + count],qubit,0)
-                count+=1
-            else:
-                ansatz.rxx(paramvec[i*params_per_rep + count],qubit,qubit+1)
-                count+=1
-
-        for qubit in range(n_qubits):
-            if qubit == n_qubits-1:
-                ansatz.ryy(paramvec[i*params_per_rep + count],qubit,0)
-                count+=1
-            else:
-                ansatz.ryy(paramvec[i*params_per_rep + count],qubit,qubit+1)
-                count+=1
+        circ.barrier([q1,q2])
         
-        for qubit in range(n_qubits):
-            ansatz.h(qubit)
-            ansatz.rz(paramvec[i*params_per_rep + count],qubit)
-            ansatz.h(qubit)
-            count+=1
+        circ.rz(params[count],q1)
+        count+=1
+        circ.rz(params[count],q2)
+        count+=1
+        circ.rxx(params[count],q1,q2)
+        count+=1
+        circ.ryy(params[count],q1,q2)
+        count+=1
+        circ.rz(params[count],q1)
+        count+=1
+        circ.rz(params[count],q2)
 
-        for qubit in range(n_qubits):
-            ansatz.rz(paramvec[i*params_per_rep + count],qubit)
-            count+=1
+        circ.barrier([q1,q2])
+
+        return circ
+        
+    count = 0
+
+    for i in range (repetitions):
+        
+        if n_qubits == 2:
+            ansatz = add_block(ansatz,0,1,paramvec[6*(count):6*(count+1)])
+            count += 1
+            
+        elif n_qubits == 3:
+            ansatz = add_block(ansatz,0,1,paramvec[6*(count):6*(count+1)])
+            count += 1
+            ansatz = add_block(ansatz,1,2,paramvec[6*(count):6*(count+1)])
+            count += 1
+        
+        else:
+            for i in range(int(n_qubits/2)):
+                ansatz = add_block(ansatz,2*i,2*i+1,paramvec[6*(count):6*(count+1)])
+                count += 1
+            if n_qubits % 2 == 0:
+                for i in range(int(n_qubits/2)-1):
+                    ansatz = add_block(ansatz,2*i+1,2*i+2,paramvec[6*(count):6*(count+1)])
+                    count += 1
+            elif n_qubits % 2 == 1:
+                for i in range(int(n_qubits/2)):
+                    ansatz = add_block(ansatz,2*i+1,2*i+2,paramvec[6*(count):6*(count+1)])
+                    count += 1
+
+
+
+
+    #End block
+    if n_qubits == 2:
+        pass
+    elif n_qubits == 3:
+        ansatz = add_block(ansatz,0,1,paramvec[6*(count):6*(count+1)])
+        count +=1
+    else:
+        for i in range(int(n_qubits/2)):
+            ansatz = add_block(ansatz,2*i,2*i+1,paramvec[6*(count):6*(count+1)])
+            count += 1
+
+
+
 
     num_params_ansatz = len(ansatz.parameters)
     ansatz = ansatz.decompose(gates_to_decompose=['rxx','ryy'])

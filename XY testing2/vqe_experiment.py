@@ -14,51 +14,51 @@ from vqe_helpers import *
 from circuit_manipulation import *
 
 
-def XYmodel(h,bx):
-    """
-    Compute Hamiltonian for molecule in qubit encoding using Qiskit Nature.
-    atom_string (String): string to describe molecule, passed to PySCFDriver.
-    new_num_orbitals (Int): Number of orbitals in active space (if None, use default result from PySCFDriver).
-    kwargs (Dict): All the arguments that need to be passed on to the next function calls.
+# def XYmodel(h,bx):
+#     """
+#     Compute Hamiltonian for molecule in qubit encoding using Qiskit Nature.
+#     atom_string (String): string to describe molecule, passed to PySCFDriver.
+#     new_num_orbitals (Int): Number of orbitals in active space (if None, use default result from PySCFDriver).
+#     kwargs (Dict): All the arguments that need to be passed on to the next function calls.
 
-    Returns:
-    (Iterable[Float], Iterable[String], String) (Pauli coefficients, Pauli strings, Hartree-Fock bitstring)
-    """
-    # converter = QubitConverter(ParityMapper(), two_qubit_reduction=True)
-    # driver = PySCFDriver(
-    #     atom=atom_string,
-    #     basis="sto3g",
-    #     charge=0,
-    #     spin=0,
-    #     unit=DistanceUnit.ANGSTROM
-    # )
-    # problem = driver.run()
-    # if new_num_orbitals is not None:
-    #     num_electrons = (problem.num_alpha, problem.num_beta)
-    #     transformer = ActiveSpaceTransformer(num_electrons, new_num_orbitals)
-    #     problem = transformer.transform(problem)
-    # ferOp = problem.hamiltonian.second_q_op()
-    # qubitOp = converter.convert(ferOp, problem.num_particles)
-    # initial_state = HartreeFock(
-    #     problem.num_spatial_orbitals,
-    #     problem.num_particles,
-    #     converter
-    # )
-    # bitstring = "".join(["1" if bit else "0" for bit in initial_state._bitstr])
-    # # need to reverse order bc of qiskit endianness
-    # paulis = [x[::-1] for x in qubitOp.primitive.paulis.to_labels()]
-    # # add the shift as extra I pauli
-    # paulis.append("I"*len(paulis[0]))
-    # paulis = np.array(paulis)
-    # coeffs = list(qubitOp.primitive.coeffs)
-    # # add the shift (nuclear repulsion)
-    # coeffs.append(problem.nuclear_repulsion_energy)
-    # coeffs = np.array(coeffs).real
+#     Returns:
+#     (Iterable[Float], Iterable[String], String) (Pauli coefficients, Pauli strings, Hartree-Fock bitstring)
+#     """
+#     # converter = QubitConverter(ParityMapper(), two_qubit_reduction=True)
+#     # driver = PySCFDriver(
+#     #     atom=atom_string,
+#     #     basis="sto3g",
+#     #     charge=0,
+#     #     spin=0,
+#     #     unit=DistanceUnit.ANGSTROM
+#     # )
+#     # problem = driver.run()
+#     # if new_num_orbitals is not None:
+#     #     num_electrons = (problem.num_alpha, problem.num_beta)
+#     #     transformer = ActiveSpaceTransformer(num_electrons, new_num_orbitals)
+#     #     problem = transformer.transform(problem)
+#     # ferOp = problem.hamiltonian.second_q_op()
+#     # qubitOp = converter.convert(ferOp, problem.num_particles)
+#     # initial_state = HartreeFock(
+#     #     problem.num_spatial_orbitals,
+#     #     problem.num_particles,
+#     #     converter
+#     # )
+#     # bitstring = "".join(["1" if bit else "0" for bit in initial_state._bitstr])
+#     # # need to reverse order bc of qiskit endianness
+#     # paulis = [x[::-1] for x in qubitOp.primitive.paulis.to_labels()]
+#     # # add the shift as extra I pauli
+#     # paulis.append("I"*len(paulis[0]))
+#     # paulis = np.array(paulis)
+#     # coeffs = list(qubitOp.primitive.coeffs)
+#     # # add the shift (nuclear repulsion)
+#     # coeffs.append(problem.nuclear_repulsion_energy)
+#     # coeffs = np.array(coeffs).real
 
-    coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1,bx,bx,bx,bx])
-    paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY','XIII','IXII','IIXI','IIIX'])
+#     coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1,bx,bx,bx,bx])
+#     paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY','XIII','IXII','IIXI','IIIX'])
 
-    return coeffs, paulis
+#     return coeffs, paulis
 
 def run_vqe(n_qubits, coeffs, paulis, param_guess, budget, shots, mode, backend, save_dir, loss_file, params_file, vqe_kwargs):
     """

@@ -164,6 +164,51 @@ def black_box_function(**params):
 
     # BO maximizes, so return the negative of the loss (energy)
     return -loss
+def XYmodel(h):
+    """
+    Compute Hamiltonian for molecule in qubit encoding using Qiskit Nature.
+    atom_string (String): string to describe molecule, passed to PySCFDriver.
+    new_num_orbitals (Int): Number of orbitals in active space (if None, use default result from PySCFDriver).
+    kwargs (Dict): All the arguments that need to be passed on to the next function calls.
+
+    Returns:
+    (Iterable[Float], Iterable[String], String) (Pauli coefficients, Pauli strings, Hartree-Fock bitstring)
+    """
+    # converter = QubitConverter(ParityMapper(), two_qubit_reduction=True)
+    # driver = PySCFDriver(
+    #     atom=atom_string,
+    #     basis="sto3g",
+    #     charge=0,
+    #     spin=0,
+    #     unit=DistanceUnit.ANGSTROM
+    # )
+    # problem = driver.run()
+    # if new_num_orbitals is not None:
+    #     num_electrons = (problem.num_alpha, problem.num_beta)
+    #     transformer = ActiveSpaceTransformer(num_electrons, new_num_orbitals)
+    #     problem = transformer.transform(problem)
+    # ferOp = problem.hamiltonian.second_q_op()
+    # qubitOp = converter.convert(ferOp, problem.num_particles)
+    # initial_state = HartreeFock(
+    #     problem.num_spatial_orbitals,
+    #     problem.num_particles,
+    #     converter
+    # )
+    # bitstring = "".join(["1" if bit else "0" for bit in initial_state._bitstr])
+    # # need to reverse order bc of qiskit endianness
+    # paulis = [x[::-1] for x in qubitOp.primitive.paulis.to_labels()]
+    # # add the shift as extra I pauli
+    # paulis.append("I"*len(paulis[0]))
+    # paulis = np.array(paulis)
+    # coeffs = list(qubitOp.primitive.coeffs)
+    # # add the shift (nuclear repulsion)
+    # coeffs.append(problem.nuclear_repulsion_energy)
+    # coeffs = np.array(coeffs).real
+
+    coeffs = np.array([h,h,1,1,1,1,h,h,1,1,1,1])
+    paulis = np.array(['ZIIZ','IZZI','YIIY','IYYI','XIIX','IXXI','ZZII','IIZZ','XXII','IIXX','YYII','IIYY'])
+
+    return coeffs, paulis
 
 ###### Cycle through adjustable parameter Hz
 for i in h:
@@ -376,10 +421,10 @@ for i in h:
     vqes.append(log.values)
     cafqa_vqes.append(log_cafqa.values)
 
-all_vqe = np.zeros((30,80))
+all_vqe = np.zeros((30,60))
 all_cafqa_vqe = np.zeros_like(all_vqe)
-for i in range(10):
-    for j in range(80):
+for i in range(30):
+    for j in range(60):
         all_vqe[i,j] = vqes[i][j]
         all_cafqa_vqe[i,j] = cafqa_vqes[i][j]
 
@@ -388,8 +433,11 @@ for i in range(10):
 # plt.plot(h,e_vqe,"o",label="VQE")
 # plt.plot(h,e_cafqa_vqe,"o",label="CAFQA + VQE")
 # plt.xlabel('Hz')
+plt.plot([get_ref_energy(coeffs, paulis) for i in range(len(np.average(all_cafqa_vqe, axis=0)))],"-k",label="Actual") 
 plt.plot(np.average(all_vqe, axis=0),label="VQE (average)")
+plt.plot(np.average(all_vqe, axis=0)[-1],'or',label="VQE converged iteration")
 plt.plot(np.average(all_cafqa_vqe, axis=0),label="CAFQA + VQE (average)")
+plt.plot(np.average(all_cafqa_vqe, axis=0)[-1],'ob',label="CAFQA + VQE converged iteration")
 plt.ylabel('Energy')
 plt.legend()
 # plt.title("4-site XXZ Model: XX + YY + Hz*ZZ (Noisy Sims)")
